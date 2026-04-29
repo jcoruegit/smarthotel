@@ -168,6 +168,7 @@ if (app.Environment.IsDevelopment())
 }
 
 await app.Services.SeedIdentityDataAsync(builder.Configuration);
+await app.Services.SeedCatalogDataAsync();
 
 app.UseExceptionHandler();
 app.UseSwagger();

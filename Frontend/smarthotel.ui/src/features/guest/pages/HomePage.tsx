@@ -89,9 +89,9 @@ export function HomePage() {
         <div className="home-top-bar">
           <p className="eyebrow">SmartHotel Platform</p>
           <div className="home-top-actions">
-            <span className="top-link top-link-disabled" role="status" aria-label="Acceso personal proximamente">
-              Acceso Personal <span className="top-link-badge">Proximamente</span>
-            </span>
+            <Link className="top-link" to="/staff/login" aria-label="Acceso personal">
+              Acceso Personal
+            </Link>
 
             <div className="profile-menu">
               <button className="profile-menu-trigger" type="button" aria-label="Opciones de acceso de cliente">

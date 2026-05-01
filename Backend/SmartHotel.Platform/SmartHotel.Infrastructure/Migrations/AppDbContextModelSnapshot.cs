@@ -176,6 +176,62 @@ namespace SmartHotel.Infrastructure.Migrations
                     b.ToTable("DocumentTypes");
                 });
 
+            modelBuilder.Entity("SmartHotel.Domain.Entities.Employee", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("BirthDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("DocumentTypeId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentTypeId", "DocumentNumber")
+                        .IsUnique();
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("Employees");
+                });
+
             modelBuilder.Entity("SmartHotel.Domain.Entities.Guest", b =>
                 {
                     b.Property<int>("Id")
@@ -678,6 +734,23 @@ namespace SmartHotel.Infrastructure.Migrations
                     b.Navigation("DocumentType");
                 });
 
+            modelBuilder.Entity("SmartHotel.Domain.Entities.Employee", b =>
+                {
+                    b.HasOne("SmartHotel.Domain.Entities.DocumentType", "DocumentType")
+                        .WithMany()
+                        .HasForeignKey("DocumentTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmartHotel.Infrastructure.Identity.ApplicationUser", null)
+                        .WithOne("Employee")
+                        .HasForeignKey("SmartHotel.Domain.Entities.Employee", "UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DocumentType");
+                });
+
             modelBuilder.Entity("SmartHotel.Domain.Entities.Payment", b =>
                 {
                     b.HasOne("SmartHotel.Domain.Entities.Reservation", "Reservation")
@@ -732,6 +805,8 @@ namespace SmartHotel.Infrastructure.Migrations
 
             modelBuilder.Entity("SmartHotel.Infrastructure.Identity.ApplicationUser", b =>
                 {
+                    b.Navigation("Employee");
+
                     b.Navigation("Guest");
                 });
 #pragma warning restore 612, 618

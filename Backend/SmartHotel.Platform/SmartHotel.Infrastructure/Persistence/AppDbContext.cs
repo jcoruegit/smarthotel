@@ -13,6 +13,7 @@ namespace SmartHotel.Infrastructure.Persistence
         }
 
         public DbSet<Guest> Guests { get; set; }
+        public DbSet<Employee> Employees { get; set; }
         public DbSet<DocumentType> DocumentTypes { get; set; }
         public DbSet<Room> Rooms { get; set; }
         public DbSet<RoomType> RoomTypes { get; set; }
@@ -50,6 +51,43 @@ namespace SmartHotel.Infrastructure.Persistence
                     .HasFilter("[UserId] IS NOT NULL");
 
                 guestBuilder.HasIndex(guest => new { guest.DocumentTypeId, guest.DocumentNumber })
+                    .IsUnique();
+            });
+
+            modelBuilder.Entity<Employee>(employeeBuilder =>
+            {
+                employeeBuilder.Property(employee => employee.UserId)
+                    .HasMaxLength(450);
+
+                employeeBuilder.Property(employee => employee.FirstName)
+                    .HasMaxLength(80);
+
+                employeeBuilder.Property(employee => employee.LastName)
+                    .HasMaxLength(80);
+
+                employeeBuilder.Property(employee => employee.DocumentNumber)
+                    .HasMaxLength(20);
+
+                employeeBuilder.Property(employee => employee.Email)
+                    .HasMaxLength(256);
+
+                employeeBuilder.HasOne(employee => employee.DocumentType)
+                    .WithMany()
+                    .HasForeignKey(employee => employee.DocumentTypeId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                employeeBuilder.HasOne<ApplicationUser>()
+                    .WithOne(user => user.Employee)
+                    .HasForeignKey<Employee>(employee => employee.UserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                employeeBuilder.HasIndex(employee => employee.UserId)
+                    .IsUnique();
+
+                employeeBuilder.HasIndex(employee => new { employee.DocumentTypeId, employee.DocumentNumber })
+                    .IsUnique();
+
+                employeeBuilder.HasIndex(employee => employee.Email)
                     .IsUnique();
             });
 

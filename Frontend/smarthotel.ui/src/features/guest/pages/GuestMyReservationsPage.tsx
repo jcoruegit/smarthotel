@@ -3,12 +3,15 @@ import { ApiError } from '../../../shared/api/httpClient';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { listMyReservations, type GuestReservationListItem } from '../api/reservationsApi';
 
+const reservationsPageSize = 3;
+
 export function GuestMyReservationsPage() {
   const { session } = useAuth();
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [reservations, setReservations] = useState<GuestReservationListItem[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,10 +38,12 @@ export function GuestMyReservationsPage() {
       });
 
       setReservations(items);
+      setCurrentPage(1);
     } catch (unknownError) {
       const message = unknownError instanceof ApiError ? unknownError.message : 'No pudimos consultar tus reservas.';
       setError(message);
       setReservations([]);
+      setCurrentPage(1);
     } finally {
       setLoading(false);
     }
@@ -54,6 +59,11 @@ export function GuestMyReservationsPage() {
     setToDate('');
     await fetchReservationsWithFilters('', '');
   }
+
+  const totalPages = Math.max(1, Math.ceil(reservations.length / reservationsPageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStart = (safeCurrentPage - 1) * reservationsPageSize;
+  const paginatedReservations = reservations.slice(pageStart, pageStart + reservationsPageSize);
 
   return (
     <main className="page guest-reservations-page">
@@ -101,22 +111,67 @@ export function GuestMyReservationsPage() {
         ) : null}
 
         {!loading && reservations.length > 0 ? (
-          <div className="room-results-list">
-            {reservations.map((reservation) => (
-              <article className="card reservation-list-item" key={reservation.reservationId}>
-                <h3>
-                  Reserva #{reservation.reservationId} - Hab. {reservation.roomNumber} ({reservation.roomTypeName})
-                </h3>
-                <p>
-                  Check in: {reservation.checkIn} | Check out: {reservation.checkOut} | Noches: {reservation.nights}
-                </p>
-                <p>
-                  Total: {formatCurrency(reservation.totalPrice)} | Pagado: {formatCurrency(reservation.totalPaid)} | Saldo:{' '}
-                  {formatCurrency(reservation.remainingBalance)}
-                </p>
-                <p>Estado: {translateReservationStatus(reservation.status)}</p>
-              </article>
-            ))}
+          <div className="card reservation-grid-wrap">
+            <table className="reservation-grid" aria-label="Listado paginado de reservas">
+              <thead>
+                <tr>
+                  <th>Reserva</th>
+                  <th>Habitacion</th>
+                  <th>Fechas</th>
+                  <th>Estado</th>
+                  <th>Totales</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedReservations.map((reservation) => (
+                  <tr key={reservation.reservationId}>
+                    <td>#{reservation.reservationId}</td>
+                    <td>
+                      Hab. {reservation.roomNumber} ({reservation.roomTypeName})
+                    </td>
+                    <td>
+                      {reservation.checkIn} - {reservation.checkOut} ({reservation.nights} noches)
+                    </td>
+                    <td>{translateReservationStatus(reservation.status)}</td>
+                    <td>
+                      Total: {formatCurrency(reservation.totalPrice)} | Pagado: {formatCurrency(reservation.totalPaid)} | Saldo:{' '}
+                      {formatCurrency(reservation.remainingBalance)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="reservation-pagination" aria-label="Paginacion de reservas">
+              <button
+                className="btn btn-ghost"
+                type="button"
+                disabled={safeCurrentPage === 1}
+                onClick={() => setCurrentPage((previousPage) => Math.max(previousPage - 1, 1))}
+              >
+                Anterior
+              </button>
+
+              {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  className={`btn ${pageNumber === safeCurrentPage ? 'btn-primary' : 'btn-ghost'}`}
+                  type="button"
+                  onClick={() => setCurrentPage(pageNumber)}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+
+              <button
+                className="btn btn-ghost"
+                type="button"
+                disabled={safeCurrentPage === totalPages}
+                onClick={() => setCurrentPage((previousPage) => Math.min(previousPage + 1, totalPages))}
+              >
+                Siguiente
+              </button>
+            </div>
           </div>
         ) : null}
       </section>

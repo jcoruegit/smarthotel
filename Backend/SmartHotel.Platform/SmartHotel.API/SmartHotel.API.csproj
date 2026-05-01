@@ -4,6 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>SmartHotel-API-Local-9f5d2be6-7d1f-4e1d-8adf-a5e9b8c4f1d2</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

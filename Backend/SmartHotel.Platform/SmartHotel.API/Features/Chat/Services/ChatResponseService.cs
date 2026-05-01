@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using SmartHotel.API.Features.Availability.Handler;
 using SmartHotel.API.Features.Availability.Query;
 using SmartHotel.API.Features.Chat.Dto;
+using SmartHotel.Domain.Entities;
 using SmartHotel.Infrastructure.Persistence;
 
 namespace SmartHotel.API.Features.Chat.Services;
@@ -35,8 +37,8 @@ public sealed class ChatResponseService(
         var reply = detection.Intent switch
         {
             IntentAvailability => await BuildAvailabilityReplyAsync(normalizedMessage, language, cancellationToken),
-            IntentAmenities => await BuildAmenitiesReplyAsync(language, false, cancellationToken),
-            IntentSchedulesPolicies => await BuildSchedulesPoliciesReplyAsync(language, false, cancellationToken),
+            IntentAmenities => await BuildAmenitiesReplyAsync(normalizedMessage, language, false, cancellationToken),
+            IntentSchedulesPolicies => await BuildSchedulesPoliciesReplyAsync(normalizedMessage, language, false, cancellationToken),
             IntentMixed => await BuildMixedReplyAsync(normalizedMessage, detection, language, cancellationToken),
             _ => BuildFallbackReply(language)
         };
@@ -64,12 +66,12 @@ public sealed class ChatResponseService(
 
         if (detection.AskAmenities)
         {
-            sections.Add(await BuildAmenitiesReplyAsync(language, true, cancellationToken));
+            sections.Add(await BuildAmenitiesReplyAsync(userMessage, language, true, cancellationToken));
         }
 
         if (detection.AskSchedulesOrPolicies)
         {
-            sections.Add(await BuildSchedulesPoliciesReplyAsync(language, true, cancellationToken));
+            sections.Add(await BuildSchedulesPoliciesReplyAsync(userMessage, language, true, cancellationToken));
         }
 
         return string.Join("\n\n", sections);
@@ -141,6 +143,7 @@ public sealed class ChatResponseService(
     }
 
     private async Task<string> BuildAmenitiesReplyAsync(
+        string userMessage,
         string language,
         bool includeTitle,
         CancellationToken cancellationToken)
@@ -159,7 +162,15 @@ public sealed class ChatResponseService(
                 : "There are no amenities configured right now.";
         }
 
-        var lines = amenities.Select(amenity =>
+        var (filteredAmenities, isSpecificAmenityRequest) = FilterAmenitiesByRequest(amenities, userMessage);
+        if (isSpecificAmenityRequest && filteredAmenities.Count == 0)
+        {
+            return language == "es"
+                ? "No encontramos informacion para ese servicio."
+                : "We could not find information for that amenity.";
+        }
+
+        var lines = filteredAmenities.Select(amenity =>
         {
             var schedule = BuildScheduleText(amenity.AvailableFrom, amenity.AvailableTo, amenity.DaysOfWeek, language);
             var price = amenity.IsComplimentary
@@ -186,6 +197,7 @@ public sealed class ChatResponseService(
     }
 
     private async Task<string> BuildSchedulesPoliciesReplyAsync(
+        string userMessage,
         string language,
         bool includeTitle,
         CancellationToken cancellationToken)
@@ -204,11 +216,23 @@ public sealed class ChatResponseService(
             .ThenBy(policy => policy.Title)
             .ToListAsync(cancellationToken);
 
+        var (filteredSchedules, filteredPolicies, isSpecificTopicRequest) = FilterSchedulesAndPoliciesByRequest(
+            schedules,
+            policies,
+            userMessage);
+
+        if (isSpecificTopicRequest && filteredSchedules.Count == 0 && filteredPolicies.Count == 0)
+        {
+            return language == "es"
+                ? "No encontramos informacion para ese horario o politica."
+                : "We could not find information for that schedule or policy.";
+        }
+
         var sections = new List<string>();
 
-        if (schedules.Count > 0)
+        if (filteredSchedules.Count > 0)
         {
-            var scheduleLines = schedules.Select(schedule =>
+            var scheduleLines = filteredSchedules.Select(schedule =>
             {
                 var scheduleText = BuildScheduleText(schedule.StartTime, schedule.EndTime, schedule.DaysOfWeek, language);
                 var notes = string.IsNullOrWhiteSpace(schedule.Notes)
@@ -222,9 +246,9 @@ public sealed class ChatResponseService(
             sections.Add($"{heading}:\n{string.Join("\n", scheduleLines)}");
         }
 
-        if (policies.Count > 0)
+        if (filteredPolicies.Count > 0)
         {
-            var policyLines = policies.Select(policy => $"- {policy.Title}: {policy.Description}");
+            var policyLines = filteredPolicies.Select(policy => $"- {policy.Title}: {policy.Description}");
             var heading = language == "es" ? "Politicas" : "Policies";
             sections.Add($"{heading}:\n{string.Join("\n", policyLines)}");
         }
@@ -270,6 +294,9 @@ public sealed class ChatResponseService(
             "sauna",
             "lavanderia",
             "laundry",
+            "pileta",
+            "piscina",
+            "pool",
             "wifi",
             "wi-fi",
             "internet",
@@ -379,6 +406,173 @@ public sealed class ChatResponseService(
         return result;
     }
 
+    private static (IReadOnlyList<HotelAmenity> Amenities, bool IsSpecificRequest) FilterAmenitiesByRequest(
+        IReadOnlyList<HotelAmenity> amenities,
+        string userMessage)
+    {
+        var normalizedMessage = NormalizeText(userMessage);
+        if (string.IsNullOrWhiteSpace(normalizedMessage))
+        {
+            return (amenities.ToList(), false);
+        }
+
+        var amenityConceptTokens = new Dictionary<string, string[]>
+        {
+            ["wifi"] = ["wifi", "wi fi", "internet"],
+            ["gym"] = ["gimnasio", "gym", "fitness"],
+            ["sauna"] = ["sauna"],
+            ["laundry"] = ["lavanderia", "laundry", "lavado", "planchado"],
+            ["spa"] = ["spa"],
+            ["pool"] = ["pileta", "piscina", "pool"],
+            ["parking"] = ["estacionamiento", "parking", "cochera"]
+        };
+
+        var requestedConcepts = amenityConceptTokens
+            .Where(entry => entry.Value.Any(token => ContainsToken(normalizedMessage, token)))
+            .Select(entry => entry.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (requestedConcepts.Count > 0)
+        {
+            var filteredByConcept = amenities
+                .Where(amenity => AmenityMatchesConcepts(amenity, requestedConcepts, amenityConceptTokens))
+                .ToList();
+
+            return (filteredByConcept, true);
+        }
+
+        var filteredByName = amenities
+            .Where(amenity => ContainsToken(normalizedMessage, NormalizeText(amenity.Name)))
+            .ToList();
+
+        if (filteredByName.Count > 0)
+        {
+            return (filteredByName, true);
+        }
+
+        return (amenities.ToList(), false);
+    }
+
+    private static bool AmenityMatchesConcepts(
+        HotelAmenity amenity,
+        IReadOnlyCollection<string> requestedConcepts,
+        IReadOnlyDictionary<string, string[]> amenityConceptTokens)
+    {
+        var searchableText = NormalizeText($"{amenity.Name} {amenity.Description}");
+
+        return requestedConcepts.Any(concept =>
+            amenityConceptTokens.TryGetValue(concept, out var tokens)
+            && tokens.Any(token => ContainsToken(searchableText, token)));
+    }
+
+    private static (IReadOnlyList<HotelSchedule> Schedules, IReadOnlyList<HotelPolicy> Policies, bool IsSpecificRequest)
+        FilterSchedulesAndPoliciesByRequest(
+            IReadOnlyList<HotelSchedule> schedules,
+            IReadOnlyList<HotelPolicy> policies,
+            string userMessage)
+    {
+        var normalizedMessage = NormalizeText(userMessage);
+        if (string.IsNullOrWhiteSpace(normalizedMessage))
+        {
+            return (schedules.ToList(), policies.ToList(), false);
+        }
+
+        var schedulePolicyConceptTokens = new Dictionary<string, string[]>
+        {
+            ["breakfast"] = ["desayuno", "breakfast"],
+            ["checkin"] = ["check in", "checkin", "ingreso"],
+            ["checkout"] = ["check out", "checkout", "salida", "egreso"],
+            ["frontdesk"] = ["recepcion", "front desk", "frontdesk"],
+            ["cancellation"] = ["cancelacion", "cancellation", "cancelar"],
+            ["pets"] = ["mascota", "mascotas", "pets", "pet"],
+            ["children"] = ["nino", "ninos", "menor", "menores", "children", "child", "kids"]
+        };
+
+        var requestedConcepts = schedulePolicyConceptTokens
+            .Where(entry => entry.Value.Any(token => ContainsToken(normalizedMessage, token)))
+            .Select(entry => entry.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (requestedConcepts.Count > 0)
+        {
+            var filteredSchedules = schedules
+                .Where(schedule => ScheduleMatchesConcepts(schedule, requestedConcepts, schedulePolicyConceptTokens))
+                .ToList();
+
+            var filteredPolicies = policies
+                .Where(policy => PolicyMatchesConcepts(policy, requestedConcepts, schedulePolicyConceptTokens))
+                .ToList();
+
+            return (filteredSchedules, filteredPolicies, true);
+        }
+
+        return (schedules.ToList(), policies.ToList(), false);
+    }
+
+    private static bool ScheduleMatchesConcepts(
+        HotelSchedule schedule,
+        IReadOnlyCollection<string> requestedConcepts,
+        IReadOnlyDictionary<string, string[]> conceptTokens)
+    {
+        var searchableText = NormalizeText($"{schedule.Code} {schedule.Title} {schedule.Notes}");
+
+        return requestedConcepts.Any(concept =>
+            conceptTokens.TryGetValue(concept, out var tokens)
+            && tokens.Any(token => ContainsToken(searchableText, token)));
+    }
+
+    private static bool PolicyMatchesConcepts(
+        HotelPolicy policy,
+        IReadOnlyCollection<string> requestedConcepts,
+        IReadOnlyDictionary<string, string[]> conceptTokens)
+    {
+        var searchableText = NormalizeText($"{policy.Code} {policy.Title} {policy.Description} {policy.Category}");
+
+        return requestedConcepts.Any(concept =>
+            conceptTokens.TryGetValue(concept, out var tokens)
+            && tokens.Any(token => ContainsToken(searchableText, token)));
+    }
+
+    private static string NormalizeText(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+
+        foreach (var character in normalized)
+        {
+            var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(character);
+            if (unicodeCategory == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            builder.Append(char.IsLetterOrDigit(character) ? character : ' ');
+        }
+
+        return Regex.Replace(builder.ToString(), @"\s+", " ").Trim();
+    }
+
+    private static bool ContainsToken(string haystack, string token)
+    {
+        if (string.IsNullOrWhiteSpace(haystack) || string.IsNullOrWhiteSpace(token))
+        {
+            return false;
+        }
+
+        var normalizedToken = NormalizeText(token);
+        if (string.IsNullOrWhiteSpace(normalizedToken))
+        {
+            return false;
+        }
+
+        return $" {haystack} ".Contains($" {normalizedToken} ", StringComparison.Ordinal);
+    }
+
     private static string BuildFallbackReply(string language)
     {
         return language == "es"
@@ -449,24 +643,81 @@ public sealed class ChatResponseService(
 
     private static string DetectLanguage(string text)
     {
-        var normalized = text.ToLowerInvariant();
+        var normalized = NormalizeText(text);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return "en";
+        }
 
         var spanishHints = new[]
         {
             "hola",
+            "buenas",
+            "hotel",
+            "tiene",
+            "tienen",
+            "hay",
             "habitacion",
+            "habitaciones",
             "disponibilidad",
+            "reserva",
+            "reservar",
             "servicio",
+            "servicios",
             "desayuno",
             "horario",
+            "horarios",
             "politica",
+            "politicas",
             "huesped",
-            "reserva",
+            "huespedes",
             "lavanderia",
-            "gimnasio"
+            "gimnasio",
+            "pileta",
+            "piscina",
+            "recepcion",
+            "mascotas",
+            "cancelacion",
+            "precio",
+            "gracias"
         };
 
-        return spanishHints.Any(normalized.Contains) ? "es" : "en";
+        var englishHints = new[]
+        {
+            "hello",
+            "hi",
+            "hotel",
+            "availability",
+            "room",
+            "rooms",
+            "reservation",
+            "reserve",
+            "booking",
+            "amenity",
+            "amenities",
+            "service",
+            "services",
+            "breakfast",
+            "schedule",
+            "schedules",
+            "policy",
+            "policies",
+            "guest",
+            "guests",
+            "laundry",
+            "gym",
+            "pool",
+            "front desk",
+            "pets",
+            "cancellation",
+            "price",
+            "thanks"
+        };
+
+        var spanishScore = spanishHints.Count(token => ContainsToken(normalized, token));
+        var englishScore = englishHints.Count(token => ContainsToken(normalized, token));
+
+        return spanishScore > englishScore ? "es" : "en";
     }
 
     private sealed record IntentDetection(

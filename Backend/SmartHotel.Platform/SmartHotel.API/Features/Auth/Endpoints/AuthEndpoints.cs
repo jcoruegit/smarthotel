@@ -8,8 +8,10 @@ using SmartHotel.API.Features.Auth.Dto;
 using SmartHotel.Domain.Entities;
 using SmartHotel.Infrastructure.Identity;
 using SmartHotel.Infrastructure.Persistence;
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace SmartHotel.API.Features.Auth.Endpoints;
@@ -17,6 +19,8 @@ namespace SmartHotel.API.Features.Auth.Endpoints;
 public static class AuthEndpoints
 {
     private static readonly HashSet<string> AllowedManagedRoles = ["Guest", "Staff", "Admin"];
+    private const string EmployeeEmailDomain = "smarthotel.dev";
+    private const string DefaultEmployeeTemporaryPassword = "Temp#Hotel2026";
 
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -57,6 +61,27 @@ public static class AuthEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        group.MapGet("/me/employee-profile", GetCurrentEmployeeProfileAsync)
+            .WithName("GetCurrentEmployeeProfile")
+            .RequireAuthorization("StaffOrAdmin")
+            .WithSummary("Obtener perfil de empleado actual")
+            .WithDescription("Retorna los datos de Employees vinculados al usuario interno autenticado.")
+            .Produces<EmployeeSelfProfileDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPut("/me/employee-profile", UpdateCurrentEmployeeProfileAsync)
+            .WithName("UpdateCurrentEmployeeProfile")
+            .RequireAuthorization("StaffOrAdmin")
+            .WithSummary("Actualizar perfil de empleado actual")
+            .WithDescription("Actualiza datos personales en AspNetUsers y Employees para el usuario interno autenticado.")
+            .Accepts<UpdateEmployeeSelfProfileRequestDto>("application/json")
+            .Produces<EmployeeSelfProfileDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         group.MapPost("/login", LoginAsync)
             .WithName("Login")
             .WithSummary("Iniciar sesion")
@@ -85,6 +110,58 @@ public static class AuthEndpoints
             .WithDescription("Operacion administrativa. Lista usuarios internos (Staff/Admin) y sus roles.")
             .Produces<IReadOnlyList<AuthUserRolesDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        group.MapGet("/employees", ListEmployeesAsync)
+            .WithName("ListEmployees")
+            .RequireAuthorization("AdminOnly")
+            .WithSummary("Consultar empleados")
+            .WithDescription("Operacion administrativa. Lista empleados internos con filtros opcionales.")
+            .Produces<IReadOnlyList<EmployeeListItemDto>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        group.MapPost("/employees", CreateEmployeeAsync)
+            .WithName("CreateEmployee")
+            .RequireAuthorization("AdminOnly")
+            .WithSummary("Dar de alta empleado")
+            .WithDescription("Operacion administrativa. Crea empleado interno y su usuario Identity asociado.")
+            .Accepts<CreateEmployeeRequestDto>("application/json")
+            .Produces<CreateEmployeeResponseDto>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        group.MapGet("/employees/{id:int}", GetEmployeeByIdAsync)
+            .WithName("GetEmployeeById")
+            .RequireAuthorization("AdminOnly")
+            .WithSummary("Obtener empleado")
+            .WithDescription("Operacion administrativa. Obtiene un empleado por id.")
+            .Produces<EmployeeListItemDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        group.MapPut("/employees/{id:int}", UpdateEmployeeAsync)
+            .WithName("UpdateEmployee")
+            .RequireAuthorization("AdminOnly")
+            .WithSummary("Modificar empleado")
+            .WithDescription("Operacion administrativa. Actualiza datos de un empleado interno.")
+            .Accepts<UpdateEmployeeRequestDto>("application/json")
+            .Produces<EmployeeListItemDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        group.MapDelete("/employees/{id:int}", DeleteEmployeeAsync)
+            .WithName("DeleteEmployee")
+            .RequireAuthorization("AdminOnly")
+            .WithSummary("Eliminar empleado")
+            .WithDescription("Operacion administrativa. Elimina un empleado interno y su usuario asociado.")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         group.MapGet("/users/{id}/roles", GetUserRolesAsync)
@@ -441,6 +518,143 @@ public static class AuthEndpoints
             guest.Phone));
     }
 
+    private static async Task<IResult> GetCurrentEmployeeProfileAsync(
+        ClaimsPrincipal principal,
+        AppDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var userId = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new UserFriendlyException("Token invalido o sin claim 'sub'.", StatusCodes.Status401Unauthorized);
+        }
+
+        var employeeProfile = await dbContext.Employees
+            .AsNoTracking()
+            .Include(entity => entity.DocumentType)
+            .Where(entity => entity.UserId == userId && entity.IsActive)
+            .Select(entity => new EmployeeSelfProfileDto(
+                entity.DocumentTypeId,
+                entity.DocumentType.Name,
+                entity.FirstName,
+                entity.LastName,
+                entity.DocumentNumber,
+                DateOnly.FromDateTime(entity.BirthDate)))
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (employeeProfile is null)
+        {
+            throw new UserFriendlyException(
+                "No encontramos un perfil de empleado asociado a tu usuario.",
+                StatusCodes.Status404NotFound);
+        }
+
+        return TypedResults.Ok(employeeProfile);
+    }
+
+    private static async Task<IResult> UpdateCurrentEmployeeProfileAsync(
+        [FromBody] UpdateEmployeeSelfProfileRequestDto? request,
+        ClaimsPrincipal principal,
+        AppDbContext dbContext,
+        UserManager<ApplicationUser> userManager,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            throw new UserFriendlyException("El cuerpo de la solicitud es obligatorio.");
+        }
+
+        if (request.DocumentTypeId <= 0)
+        {
+            throw new UserFriendlyException("El campo 'documentTypeId' es obligatorio.");
+        }
+
+        var firstName = NormalizeRequiredValue(request.FirstName, "firstName");
+        var lastName = NormalizeRequiredValue(request.LastName, "lastName");
+        var documentNumber = NormalizeDocumentNumber(request.DocumentNumber);
+
+        var userId = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new UserFriendlyException("Token invalido o sin claim 'sub'.", StatusCodes.Status401Unauthorized);
+        }
+
+        var employee = await dbContext.Employees
+            .SingleOrDefaultAsync(entity => entity.UserId == userId && entity.IsActive, cancellationToken);
+
+        if (employee is null)
+        {
+            throw new UserFriendlyException(
+                "No encontramos un perfil de empleado asociado a tu usuario.",
+                StatusCodes.Status404NotFound);
+        }
+
+        var documentType = await dbContext.DocumentTypes
+            .AsNoTracking()
+            .SingleOrDefaultAsync(entity => entity.Id == request.DocumentTypeId, cancellationToken);
+
+        if (documentType is null)
+        {
+            throw new UserFriendlyException("El tipo de documento indicado no existe.", StatusCodes.Status400BadRequest);
+        }
+
+        var existingEmployeeByDocument = await dbContext.Employees
+            .AsNoTracking()
+            .AnyAsync(
+                entity => entity.Id != employee.Id
+                    && entity.DocumentTypeId == request.DocumentTypeId
+                    && entity.DocumentNumber == documentNumber
+                    && entity.IsActive,
+                cancellationToken);
+
+        if (existingEmployeeByDocument)
+        {
+            throw new UserFriendlyException(
+                "Ya existe un empleado con el tipo y numero de documento indicados.",
+                StatusCodes.Status409Conflict);
+        }
+
+        var user = await userManager.FindByIdAsync(userId);
+        if (user is not null)
+        {
+            user.FullName = BuildFullName(firstName, lastName);
+            var updateUserResult = await userManager.UpdateAsync(user);
+            if (!updateUserResult.Succeeded)
+            {
+                throw new UserFriendlyException(FormatIdentityErrors(updateUserResult.Errors));
+            }
+        }
+
+        employee.DocumentTypeId = request.DocumentTypeId;
+        employee.FirstName = firstName;
+        employee.LastName = lastName;
+        employee.DocumentNumber = documentNumber;
+        employee.BirthDate = request.BirthDate.ToDateTime(TimeOnly.MinValue);
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            throw new UserFriendlyException(
+                "No pudimos actualizar tus datos porque el tipo y numero de documento ya estan en uso.",
+                StatusCodes.Status409Conflict);
+        }
+
+        return TypedResults.Ok(new EmployeeSelfProfileDto(
+            employee.DocumentTypeId,
+            documentType.Name,
+            employee.FirstName,
+            employee.LastName,
+            employee.DocumentNumber,
+            DateOnly.FromDateTime(employee.BirthDate)));
+    }
+
     private static async Task<IResult> LoginAsync(
         [FromBody] LoginRequestDto? request,
         UserManager<ApplicationUser> userManager,
@@ -537,6 +751,472 @@ public static class AuthEndpoints
         }
 
         logger.LogInformation("Password actualizado. UserId={UserId}, Email={Email}", user.Id, user.Email);
+
+        return TypedResults.NoContent();
+    }
+
+    private static async Task<IResult> ListEmployeesAsync(
+        [AsParameters] ListEmployeesRequestDto request,
+        AppDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.Employees
+            .AsNoTracking()
+            .Include(employee => employee.DocumentType)
+            .Where(employee => employee.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(request.FirstName))
+        {
+            var firstNameFilter = request.FirstName.Trim().ToUpperInvariant();
+            query = query.Where(employee => employee.FirstName.ToUpper().Contains(firstNameFilter));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.LastName))
+        {
+            var lastNameFilter = request.LastName.Trim().ToUpperInvariant();
+            query = query.Where(employee => employee.LastName.ToUpper().Contains(lastNameFilter));
+        }
+
+        if (request.DocumentTypeId is > 0)
+        {
+            query = query.Where(employee => employee.DocumentTypeId == request.DocumentTypeId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.DocumentNumber))
+        {
+            var documentNumber = NormalizeDocumentNumber(request.DocumentNumber);
+            query = query.Where(employee => employee.DocumentNumber == documentNumber);
+        }
+
+        var employees = await query
+            .OrderBy(employee => employee.LastName)
+            .ThenBy(employee => employee.FirstName)
+            .ThenBy(employee => employee.Id)
+            .Select(employee => new
+            {
+                employee.Id,
+                employee.UserId,
+                employee.FirstName,
+                employee.LastName,
+                employee.DocumentTypeId,
+                DocumentTypeName = employee.DocumentType.Name,
+                employee.DocumentNumber,
+                employee.BirthDate,
+                employee.Email
+            })
+            .ToListAsync(cancellationToken);
+
+        if (employees.Count == 0)
+        {
+            return TypedResults.Ok(Array.Empty<EmployeeListItemDto>());
+        }
+
+        var userIds = employees.Select(employee => employee.UserId).ToArray();
+        var roleRows = await (
+            from userRole in dbContext.UserRoles.AsNoTracking()
+            join role in dbContext.Roles.AsNoTracking() on userRole.RoleId equals role.Id
+            where userIds.Contains(userRole.UserId)
+            select new { userRole.UserId, role.Name })
+            .ToListAsync(cancellationToken);
+
+        var rolesByUserId = roleRows
+            .Where(row => !string.IsNullOrWhiteSpace(row.Name))
+            .GroupBy(row => row.UserId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(row => row.Name!).ToArray(),
+                StringComparer.Ordinal);
+
+        var normalizedProfileFilter = NormalizeOptionalValue(request.Profile);
+        if (normalizedProfileFilter is not null
+            && !IsInternalProfile(normalizedProfileFilter))
+        {
+            throw new UserFriendlyException("El filtro 'profile' solo admite 'Staff' o 'Admin'.");
+        }
+
+        var response = employees
+            .Select(employee =>
+            {
+                rolesByUserId.TryGetValue(employee.UserId, out var roles);
+                var profile = ResolveEmployeeProfile(roles ?? []);
+                return new EmployeeListItemDto(
+                    employee.Id,
+                    employee.UserId,
+                    employee.FirstName,
+                    employee.LastName,
+                    employee.DocumentTypeId,
+                    employee.DocumentTypeName,
+                    employee.DocumentNumber,
+                    DateOnly.FromDateTime(employee.BirthDate),
+                    employee.Email,
+                    profile);
+            })
+            .Where(employee => normalizedProfileFilter is null
+                || string.Equals(employee.Profile, normalizedProfileFilter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return TypedResults.Ok(response);
+    }
+
+    private static async Task<IResult> CreateEmployeeAsync(
+        [FromBody] CreateEmployeeRequestDto? request,
+        UserManager<ApplicationUser> userManager,
+        RoleManager<IdentityRole> roleManager,
+        AppDbContext dbContext,
+        IOptions<IdentityOptions> identityOptions,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            throw new UserFriendlyException("El cuerpo de la solicitud es obligatorio.");
+        }
+
+        var firstName = NormalizeRequiredValue(request.FirstName, "firstName");
+        var lastName = NormalizeRequiredValue(request.LastName, "lastName");
+        var profile = NormalizeRequiredValue(request.Profile, "profile");
+        if (!IsInternalProfile(profile))
+        {
+            throw new UserFriendlyException("El campo 'profile' solo admite 'Staff' o 'Admin'.");
+        }
+        var normalizedProfile = NormalizeInternalProfile(profile);
+
+        if (request.DocumentTypeId <= 0)
+        {
+            throw new UserFriendlyException("El campo 'documentTypeId' es obligatorio.");
+        }
+
+        var documentNumber = NormalizeDocumentNumber(request.DocumentNumber);
+        var documentType = await dbContext.DocumentTypes
+            .AsNoTracking()
+            .SingleOrDefaultAsync(entity => entity.Id == request.DocumentTypeId, cancellationToken);
+
+        if (documentType is null)
+        {
+            throw new UserFriendlyException("El tipo de documento indicado no existe.", StatusCodes.Status400BadRequest);
+        }
+
+        var existingEmployeeByDocument = await dbContext.Employees
+            .AsNoTracking()
+            .AnyAsync(
+                employee => employee.DocumentTypeId == request.DocumentTypeId
+                    && employee.DocumentNumber == documentNumber
+                    && employee.IsActive,
+                cancellationToken);
+
+        if (existingEmployeeByDocument)
+        {
+            throw new UserFriendlyException(
+                "Ya existe un empleado con el tipo y numero de documento indicados.",
+                StatusCodes.Status409Conflict);
+        }
+
+        if (!await roleManager.RoleExistsAsync(normalizedProfile))
+        {
+            var createRoleResult = await roleManager.CreateAsync(new IdentityRole(normalizedProfile));
+            if (!createRoleResult.Succeeded)
+            {
+                throw new UserFriendlyException(FormatIdentityErrors(createRoleResult.Errors), StatusCodes.Status500InternalServerError);
+            }
+        }
+
+        var email = await GenerateEmployeeEmailAsync(firstName, lastName, userManager, cancellationToken);
+        var fullName = BuildFullName(firstName, lastName);
+
+        var user = new ApplicationUser
+        {
+            UserName = email,
+            Email = email,
+            FullName = fullName,
+            EmailConfirmed = !identityOptions.Value.SignIn.RequireConfirmedEmail
+        };
+
+        var createUserResult = await userManager.CreateAsync(user, DefaultEmployeeTemporaryPassword);
+        if (!createUserResult.Succeeded)
+        {
+            throw new UserFriendlyException(FormatIdentityErrors(createUserResult.Errors));
+        }
+
+        var addRoleResult = await userManager.AddToRoleAsync(user, normalizedProfile);
+        if (!addRoleResult.Succeeded)
+        {
+            await userManager.DeleteAsync(user);
+            throw new UserFriendlyException(FormatIdentityErrors(addRoleResult.Errors), StatusCodes.Status500InternalServerError);
+        }
+
+        var employee = new Employee
+        {
+            UserId = user.Id,
+            DocumentTypeId = request.DocumentTypeId,
+            FirstName = firstName,
+            LastName = lastName,
+            DocumentNumber = documentNumber,
+            BirthDate = request.BirthDate.ToDateTime(TimeOnly.MinValue),
+            Email = email,
+            IsActive = true
+        };
+
+        dbContext.Employees.Add(employee);
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            await userManager.DeleteAsync(user);
+            throw new UserFriendlyException(
+                "No pudimos crear el empleado porque ya existe informacion duplicada.",
+                StatusCodes.Status409Conflict);
+        }
+
+        var response = new CreateEmployeeResponseDto(
+            employee.Id,
+            user.Id,
+            fullName,
+            email,
+            normalizedProfile,
+            DefaultEmployeeTemporaryPassword);
+
+        return TypedResults.Created($"/auth/employees/{employee.Id}", response);
+    }
+
+    private static async Task<IResult> GetEmployeeByIdAsync(
+        [FromRoute] int id,
+        AppDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            throw new UserFriendlyException("El parametro 'id' es obligatorio.");
+        }
+
+        var employee = await dbContext.Employees
+            .AsNoTracking()
+            .Include(entity => entity.DocumentType)
+            .SingleOrDefaultAsync(entity => entity.Id == id && entity.IsActive, cancellationToken);
+
+        if (employee is null)
+        {
+            throw new UserFriendlyException("No encontramos el empleado indicado.", StatusCodes.Status404NotFound);
+        }
+
+        var profile = await ResolveEmployeeProfileByUserIdAsync(employee.UserId, dbContext, cancellationToken);
+
+        return TypedResults.Ok(new EmployeeListItemDto(
+            employee.Id,
+            employee.UserId,
+            employee.FirstName,
+            employee.LastName,
+            employee.DocumentTypeId,
+            employee.DocumentType.Name,
+            employee.DocumentNumber,
+            DateOnly.FromDateTime(employee.BirthDate),
+            employee.Email,
+            profile));
+    }
+
+    private static async Task<IResult> UpdateEmployeeAsync(
+        [FromRoute] int id,
+        [FromBody] UpdateEmployeeRequestDto? request,
+        UserManager<ApplicationUser> userManager,
+        RoleManager<IdentityRole> roleManager,
+        AppDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            throw new UserFriendlyException("El parametro 'id' es obligatorio.");
+        }
+
+        if (request is null)
+        {
+            throw new UserFriendlyException("El cuerpo de la solicitud es obligatorio.");
+        }
+
+        var employee = await dbContext.Employees
+            .SingleOrDefaultAsync(entity => entity.Id == id && entity.IsActive, cancellationToken);
+
+        if (employee is null)
+        {
+            throw new UserFriendlyException("No encontramos el empleado indicado.", StatusCodes.Status404NotFound);
+        }
+
+        var user = await userManager.FindByIdAsync(employee.UserId);
+        if (user is null)
+        {
+            throw new UserFriendlyException("No encontramos el usuario asociado al empleado.", StatusCodes.Status404NotFound);
+        }
+
+        var firstName = NormalizeRequiredValue(request.FirstName, "firstName");
+        var lastName = NormalizeRequiredValue(request.LastName, "lastName");
+        var profile = NormalizeRequiredValue(request.Profile, "profile");
+        if (!IsInternalProfile(profile))
+        {
+            throw new UserFriendlyException("El campo 'profile' solo admite 'Staff' o 'Admin'.");
+        }
+
+        var normalizedProfile = NormalizeInternalProfile(profile);
+
+        if (request.DocumentTypeId <= 0)
+        {
+            throw new UserFriendlyException("El campo 'documentTypeId' es obligatorio.");
+        }
+
+        var documentNumber = NormalizeDocumentNumber(request.DocumentNumber);
+        var documentType = await dbContext.DocumentTypes
+            .AsNoTracking()
+            .SingleOrDefaultAsync(entity => entity.Id == request.DocumentTypeId, cancellationToken);
+
+        if (documentType is null)
+        {
+            throw new UserFriendlyException("El tipo de documento indicado no existe.", StatusCodes.Status400BadRequest);
+        }
+
+        var existingEmployeeByDocument = await dbContext.Employees
+            .AsNoTracking()
+            .AnyAsync(
+                entity => entity.Id != employee.Id
+                    && entity.DocumentTypeId == request.DocumentTypeId
+                    && entity.DocumentNumber == documentNumber
+                    && entity.IsActive,
+                cancellationToken);
+
+        if (existingEmployeeByDocument)
+        {
+            throw new UserFriendlyException(
+                "Ya existe un empleado con el tipo y numero de documento indicados.",
+                StatusCodes.Status409Conflict);
+        }
+
+        if (!await roleManager.RoleExistsAsync(normalizedProfile))
+        {
+            var createRoleResult = await roleManager.CreateAsync(new IdentityRole(normalizedProfile));
+            if (!createRoleResult.Succeeded)
+            {
+                throw new UserFriendlyException(FormatIdentityErrors(createRoleResult.Errors), StatusCodes.Status500InternalServerError);
+            }
+        }
+
+        user.FullName = BuildFullName(firstName, lastName);
+        var updateUserResult = await userManager.UpdateAsync(user);
+        if (!updateUserResult.Succeeded)
+        {
+            throw new UserFriendlyException(FormatIdentityErrors(updateUserResult.Errors));
+        }
+
+        var currentRoles = await userManager.GetRolesAsync(user);
+        var internalRolesToRemove = currentRoles
+            .Where(role => string.Equals(role, "Staff", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (internalRolesToRemove.Length > 0)
+        {
+            var removeRolesResult = await userManager.RemoveFromRolesAsync(user, internalRolesToRemove);
+            if (!removeRolesResult.Succeeded)
+            {
+                throw new UserFriendlyException(FormatIdentityErrors(removeRolesResult.Errors), StatusCodes.Status500InternalServerError);
+            }
+        }
+
+        var addRoleResult = await userManager.AddToRoleAsync(user, normalizedProfile);
+        if (!addRoleResult.Succeeded)
+        {
+            throw new UserFriendlyException(FormatIdentityErrors(addRoleResult.Errors), StatusCodes.Status500InternalServerError);
+        }
+
+        employee.FirstName = firstName;
+        employee.LastName = lastName;
+        employee.DocumentTypeId = request.DocumentTypeId;
+        employee.DocumentNumber = documentNumber;
+        employee.BirthDate = request.BirthDate.ToDateTime(TimeOnly.MinValue);
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            throw new UserFriendlyException(
+                "No pudimos modificar el empleado porque el tipo y numero de documento ya estan en uso.",
+                StatusCodes.Status409Conflict);
+        }
+
+        return TypedResults.Ok(new EmployeeListItemDto(
+            employee.Id,
+            employee.UserId,
+            employee.FirstName,
+            employee.LastName,
+            employee.DocumentTypeId,
+            documentType.Name,
+            employee.DocumentNumber,
+            DateOnly.FromDateTime(employee.BirthDate),
+            employee.Email,
+            normalizedProfile));
+    }
+
+    private static async Task<IResult> DeleteEmployeeAsync(
+        [FromRoute] int id,
+        ClaimsPrincipal principal,
+        UserManager<ApplicationUser> userManager,
+        AppDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            throw new UserFriendlyException("El parametro 'id' es obligatorio.");
+        }
+
+        var employee = await dbContext.Employees
+            .SingleOrDefaultAsync(entity => entity.Id == id && entity.IsActive, cancellationToken);
+
+        if (employee is null)
+        {
+            throw new UserFriendlyException("No encontramos el empleado indicado.", StatusCodes.Status404NotFound);
+        }
+
+        var requesterUserId = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.Equals(requesterUserId, employee.UserId, StringComparison.Ordinal))
+        {
+            throw new UserFriendlyException(
+                "No podes eliminar tu propio usuario.",
+                StatusCodes.Status409Conflict);
+        }
+
+        var user = await userManager.FindByIdAsync(employee.UserId);
+        if (user is null)
+        {
+            dbContext.Employees.Remove(employee);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return TypedResults.NoContent();
+        }
+
+        if (await userManager.IsInRoleAsync(user, "Admin"))
+        {
+            var adminUsers = await userManager.GetUsersInRoleAsync("Admin");
+            if (adminUsers.Count <= 1)
+            {
+                throw new UserFriendlyException(
+                    "No se puede eliminar el ultimo usuario administrador.",
+                    StatusCodes.Status409Conflict);
+            }
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        dbContext.Employees.Remove(employee);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var deleteUserResult = await userManager.DeleteAsync(user);
+        if (!deleteUserResult.Succeeded)
+        {
+            throw new UserFriendlyException(
+                FormatIdentityErrors(deleteUserResult.Errors),
+                StatusCodes.Status500InternalServerError);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
 
         return TypedResults.NoContent();
     }
@@ -740,6 +1420,61 @@ public static class AuthEndpoints
         return value.Trim();
     }
 
+    private static bool IsInternalProfile(string profile)
+    {
+        return string.Equals(profile, "Staff", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(profile, "Admin", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeInternalProfile(string profile)
+    {
+        return string.Equals(profile, "Admin", StringComparison.OrdinalIgnoreCase)
+            ? "Admin"
+            : "Staff";
+    }
+
+    private static string ResolveEmployeeProfile(IReadOnlyList<string> roles)
+    {
+        if (roles.Any(role => string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Admin";
+        }
+
+        if (roles.Any(role => string.Equals(role, "Staff", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Staff";
+        }
+
+        return "Staff";
+    }
+
+    private static async Task<string> ResolveEmployeeProfileByUserIdAsync(
+        string userId,
+        AppDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var roles = await (
+            from userRole in dbContext.UserRoles.AsNoTracking()
+            join role in dbContext.Roles.AsNoTracking() on userRole.RoleId equals role.Id
+            where userRole.UserId == userId && role.Name != null
+            select role.Name!)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        return ResolveEmployeeProfile(roles);
+    }
+
+    private static string NormalizeDocumentNumber(string value)
+    {
+        var documentNumber = NormalizeRequiredValue(value, "documentNumber");
+        if (!Regex.IsMatch(documentNumber, "^[0-9]{7,8}$"))
+        {
+            throw new UserFriendlyException("El numero de documento debe tener al menos 7 digitos y como maximo 8, usando solo numeros.");
+        }
+
+        return documentNumber;
+    }
+
     private static string? NormalizeOptionalValue(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -753,6 +1488,67 @@ public static class AuthEndpoints
     private static string BuildFullName(string firstName, string lastName)
     {
         return string.Join(" ", [firstName, lastName]);
+    }
+
+    private static async Task<string> GenerateEmployeeEmailAsync(
+        string firstName,
+        string lastName,
+        UserManager<ApplicationUser> userManager,
+        CancellationToken cancellationToken)
+    {
+        var normalizedFirst = SanitizeForEmail(firstName);
+        var normalizedLast = SanitizeForEmail(lastName);
+        if (string.IsNullOrWhiteSpace(normalizedFirst) || string.IsNullOrWhiteSpace(normalizedLast))
+        {
+            throw new UserFriendlyException("No pudimos generar el email del empleado con los datos ingresados.");
+        }
+
+        for (var letterCount = 1; letterCount <= normalizedFirst.Length; letterCount++)
+        {
+            var firstFragment = normalizedFirst[..letterCount];
+            var localPart = $"{firstFragment}{normalizedLast}";
+            var candidate = $"{localPart}@{EmployeeEmailDomain}";
+
+            var existingUser = await userManager.FindByEmailAsync(candidate);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (existingUser is null)
+            {
+                return candidate;
+            }
+        }
+
+        var baseLocalPart = $"{normalizedFirst}{normalizedLast}";
+        for (var suffix = 2; suffix < 1000; suffix++)
+        {
+            var candidate = $"{baseLocalPart}{suffix}@{EmployeeEmailDomain}";
+            var existingUser = await userManager.FindByEmailAsync(candidate);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (existingUser is null)
+            {
+                return candidate;
+            }
+        }
+
+        throw new UserFriendlyException("No se pudo generar un email disponible para el empleado.");
+    }
+
+    private static string SanitizeForEmail(string value)
+    {
+        var normalized = value
+            .Normalize(NormalizationForm.FormD)
+            .Where(character => CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            .ToArray();
+
+        var withoutDiacritics = new string(normalized)
+            .Normalize(NormalizationForm.FormC)
+            .Trim()
+            .ToLowerInvariant();
+
+        var allowedCharacters = withoutDiacritics
+            .Where(character => char.IsLetterOrDigit(character))
+            .ToArray();
+
+        return new string(allowedCharacters);
     }
 
     private static bool IsAtLeastAge(DateOnly birthDate, int minimumAge)

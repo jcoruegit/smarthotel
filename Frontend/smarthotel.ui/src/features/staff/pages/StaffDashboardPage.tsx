@@ -4,6 +4,7 @@ import { useAuth } from '../../auth/hooks/useAuth';
 export function StaffDashboardPage() {
   const { session, hasRole } = useAuth();
   const isAdmin = hasRole('Admin');
+  const canManageOwnProfile = hasRole('Staff') && !isAdmin;
 
   return (
     <main className="page staff-page">
@@ -15,16 +16,6 @@ export function StaffDashboardPage() {
 
       <section className="grid-cards">
         <article className="card">
-          <h2>Reservas</h2>
-          <p>Alta, modificacion y baja de reservas internas.</p>
-          <div className="button-row">
-            <Link className="btn btn-primary" to="/staff/reservas">
-              Gestionar reservas
-            </Link>
-          </div>
-        </article>
-
-        <article className="card">
           <h2>Pricing rules</h2>
           <p>Crear y actualizar reglas de precio por tipo de habitacion y fecha.</p>
           <div className="button-row">
@@ -34,10 +25,22 @@ export function StaffDashboardPage() {
           </div>
         </article>
 
+        {canManageOwnProfile ? (
+          <article className="card">
+            <h2>Mis datos</h2>
+            <p>Actualizar informacion personal y cambiar clave de acceso.</p>
+            <div className="button-row">
+              <Link className="btn btn-primary" to="/staff/datos">
+                Modificar mis datos
+              </Link>
+            </div>
+          </article>
+        ) : null}
+
         {isAdmin ? (
           <article className="card">
             <h2>Empleados</h2>
-            <p>Administrar roles de usuarios internos (solo Admin).</p>
+            <p>Consulta y alta de empleados internos (solo Admin).</p>
             <div className="button-row">
               <Link className="btn btn-primary" to="/staff/empleados">
                 Gestionar empleados

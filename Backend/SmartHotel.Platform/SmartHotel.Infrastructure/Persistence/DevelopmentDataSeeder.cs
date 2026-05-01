@@ -365,6 +365,20 @@ public static class DevelopmentDataSeeder
             },
             new
             {
+                Name = "Pileta",
+                Description = "Pileta climatizada con area de descanso.",
+                AvailableFrom = (TimeOnly?)new TimeOnly(9, 0),
+                AvailableTo = (TimeOnly?)new TimeOnly(21, 0),
+                DaysOfWeek = everyDay,
+                IsComplimentary = true,
+                Price = (decimal?)null,
+                Currency = (string?)null,
+                RequiresReservation = false,
+                IsActive = true,
+                DisplayOrder = 3
+            },
+            new
+            {
                 Name = "Lavanderia",
                 Description = "Servicio de lavado y planchado con entrega en 24 horas.",
                 AvailableFrom = (TimeOnly?)new TimeOnly(8, 0),
@@ -375,7 +389,7 @@ public static class DevelopmentDataSeeder
                 Currency = (string?)"USD",
                 RequiresReservation = false,
                 IsActive = true,
-                DisplayOrder = 3
+                DisplayOrder = 4
             },
             new
             {
@@ -389,7 +403,7 @@ public static class DevelopmentDataSeeder
                 Currency = (string?)null,
                 RequiresReservation = false,
                 IsActive = true,
-                DisplayOrder = 4
+                DisplayOrder = 5
             }
         };
 

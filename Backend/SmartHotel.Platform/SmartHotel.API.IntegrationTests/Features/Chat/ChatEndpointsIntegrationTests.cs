@@ -135,6 +135,101 @@ public sealed class ChatEndpointsIntegrationTests
     }
 
     [Fact]
+    public async Task SendMessage_ShouldReturnSpecificAmenity_WhenAskingForWifi()
+    {
+        using var factory = new ApiWebApplicationFactory();
+        await SeedDatabaseAsync(factory, dbContext =>
+        {
+            dbContext.HotelAmenities.AddRange(
+                new HotelAmenity
+                {
+                    Id = 1,
+                    Name = "Wi-Fi",
+                    Description = "Internet de alta velocidad",
+                    IsComplimentary = true,
+                    DaysOfWeek = "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+                    IsActive = true,
+                    DisplayOrder = 1
+                },
+                new HotelAmenity
+                {
+                    Id = 2,
+                    Name = "Sauna",
+                    Description = "Sauna seco",
+                    AvailableFrom = new TimeOnly(10, 0),
+                    AvailableTo = new TimeOnly(20, 0),
+                    IsComplimentary = false,
+                    Price = 15m,
+                    Currency = "USD",
+                    DaysOfWeek = "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+                    IsActive = true,
+                    DisplayOrder = 2
+                });
+
+            return Task.CompletedTask;
+        });
+
+        using var client = CreateClient(factory);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/chat/message",
+            new ChatMessageRequestDto("Tiene wifi?"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var payload = await response.Content.ReadFromJsonAsync<ChatMessageResponseDto>();
+        Assert.NotNull(payload);
+        Assert.Equal("consultar_servicios", payload.DetectedIntent);
+        Assert.Contains("Wi-Fi", payload.Reply, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Sauna", payload.Reply, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SendMessage_ShouldReturnSpecificSchedule_WhenAskingForBreakfast()
+    {
+        using var factory = new ApiWebApplicationFactory();
+        await SeedDatabaseAsync(factory, dbContext =>
+        {
+            dbContext.HotelSchedules.AddRange(
+                new HotelSchedule
+                {
+                    Id = 1,
+                    Code = "BREAKFAST",
+                    Title = "Desayuno buffet",
+                    StartTime = new TimeOnly(7, 0),
+                    EndTime = new TimeOnly(10, 30),
+                    IsActive = true,
+                    DisplayOrder = 1
+                },
+                new HotelSchedule
+                {
+                    Id = 2,
+                    Code = "CHECKIN",
+                    Title = "Horario de check-in",
+                    StartTime = new TimeOnly(15, 0),
+                    IsActive = true,
+                    DisplayOrder = 2
+                });
+
+            return Task.CompletedTask;
+        });
+
+        using var client = CreateClient(factory);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/chat/message",
+            new ChatMessageRequestDto("Cual es el horario del desayuno?"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var payload = await response.Content.ReadFromJsonAsync<ChatMessageResponseDto>();
+        Assert.NotNull(payload);
+        Assert.Equal("consultar_horarios_politicas", payload.DetectedIntent);
+        Assert.Contains("Desayuno", payload.Reply, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("check-in", payload.Reply, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SendMessage_ShouldReturnBadRequest_WhenMessageIsEmpty()
     {
         using var factory = new ApiWebApplicationFactory();

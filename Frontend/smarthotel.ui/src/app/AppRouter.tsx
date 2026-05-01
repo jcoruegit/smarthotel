@@ -14,9 +14,10 @@ import { GuestControlPanelPage } from '../features/guest/pages/GuestControlPanel
 import { GuestProfileEditPage } from '../features/guest/pages/GuestProfileEditPage';
 import { GuestMyReservationsPage } from '../features/guest/pages/GuestMyReservationsPage';
 import { StaffDashboardPage } from '../features/staff/pages/StaffDashboardPage';
-import { StaffReservationsPage } from '../features/staff/pages/StaffReservationsPage';
 import { PricingRulesPage } from '../features/staff/pages/PricingRulesPage';
 import { EmployeesPage } from '../features/staff/pages/EmployeesPage';
+import { EmployeeCreatePage } from '../features/staff/pages/EmployeeCreatePage';
+import { StaffProfileEditPage } from '../features/staff/pages/StaffProfileEditPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { UnauthorizedPage } from './pages/UnauthorizedPage';
 
@@ -47,11 +48,16 @@ export function AppRouter() {
 
         <Route element={<ProtectedRoute allowedRoles={['Staff', 'Admin']} redirectTo="/staff/login" />}>
           <Route path="/staff" element={<StaffDashboardPage />} />
-          <Route path="/staff/reservas" element={<StaffReservationsPage />} />
           <Route path="/staff/pricing" element={<PricingRulesPage />} />
+
+          <Route element={<ProtectedRoute allowedRoles={['Staff']} redirectTo="/staff" />}>
+            <Route path="/staff/datos" element={<StaffProfileEditPage />} />
+          </Route>
 
           <Route element={<ProtectedRoute allowedRoles={['Admin']} redirectTo="/staff/login" />}>
             <Route path="/staff/empleados" element={<EmployeesPage />} />
+            <Route path="/staff/empleados/alta" element={<EmployeeCreatePage />} />
+            <Route path="/staff/empleados/:employeeId/modificar" element={<EmployeeCreatePage />} />
           </Route>
         </Route>
 

@@ -63,6 +63,23 @@ export interface UpdateGuestProfileRequest {
   phone?: string | null;
 }
 
+export interface EmployeeSelfProfile {
+  documentTypeId: number;
+  documentTypeName: string;
+  firstName: string;
+  lastName: string;
+  documentNumber: string;
+  birthDate: string;
+}
+
+export interface UpdateEmployeeSelfProfileRequest {
+  documentTypeId: number;
+  firstName: string;
+  lastName: string;
+  documentNumber: string;
+  birthDate: string;
+}
+
 export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
@@ -73,4 +90,52 @@ export interface AuthUserRoles {
   email: string;
   fullName: string | null;
   roles: AppRole[];
+}
+
+export interface EmployeeListItem {
+  employeeId: number;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  documentTypeId: number;
+  documentTypeName: string;
+  documentNumber: string;
+  birthDate: string;
+  email: string;
+  profile: 'Staff' | 'Admin';
+}
+
+export interface ListEmployeesFilters {
+  firstName?: string;
+  lastName?: string;
+  documentTypeId?: number;
+  documentNumber?: string;
+  profile?: 'Staff' | 'Admin';
+}
+
+export interface CreateEmployeeRequest {
+  firstName: string;
+  lastName: string;
+  documentTypeId: number;
+  documentNumber: string;
+  birthDate: string;
+  profile: 'Staff' | 'Admin';
+}
+
+export interface UpdateEmployeeRequest {
+  firstName: string;
+  lastName: string;
+  documentTypeId: number;
+  documentNumber: string;
+  birthDate: string;
+  profile: 'Staff' | 'Admin';
+}
+
+export interface CreateEmployeeResponse {
+  employeeId: number;
+  userId: string;
+  fullName: string;
+  email: string;
+  profile: 'Staff' | 'Admin';
+  temporaryPassword: string;
 }

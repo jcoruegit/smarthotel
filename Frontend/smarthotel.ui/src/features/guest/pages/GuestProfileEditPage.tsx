@@ -187,6 +187,16 @@ export function GuestProfileEditPage() {
           <h2>Datos personales</h2>
 
           <label className="field">
+            Nombre
+            <input value={firstName} onChange={(event) => setFirstName(event.target.value)} required />
+          </label>
+
+          <label className="field">
+            Apellido
+            <input value={lastName} onChange={(event) => setLastName(event.target.value)} required />
+          </label>
+
+          <label className="field">
             Tipo de documento
             <select value={documentTypeId} onChange={(event) => setDocumentTypeId(Number(event.target.value))} required>
               {documentTypes.map((option) => (
@@ -195,16 +205,6 @@ export function GuestProfileEditPage() {
                 </option>
               ))}
             </select>
-          </label>
-
-          <label className="field">
-            Nombre
-            <input value={firstName} onChange={(event) => setFirstName(event.target.value)} required />
-          </label>
-
-          <label className="field">
-            Apellido
-            <input value={lastName} onChange={(event) => setLastName(event.target.value)} required />
           </label>
 
           <label className="field">

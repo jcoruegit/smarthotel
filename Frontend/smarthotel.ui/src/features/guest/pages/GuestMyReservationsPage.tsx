@@ -28,8 +28,13 @@ export function GuestMyReservationsPage() {
       return;
     }
 
-    setLoading(true);
     setError(null);
+    if (nextFromDate && nextToDate && new Date(nextFromDate).getTime() > new Date(nextToDate).getTime()) {
+      setError('El campo Desde no puede ser mayor que el campo Hasta');
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const items = await listMyReservations(session.accessToken, {
@@ -40,7 +45,7 @@ export function GuestMyReservationsPage() {
       setReservations(items);
       setCurrentPage(1);
     } catch (unknownError) {
-      const message = unknownError instanceof ApiError ? unknownError.message : 'No pudimos consultar tus reservas.';
+      const message = unknownError instanceof ApiError ? normalizeFilterErrorMessage(unknownError.message) : 'No pudimos consultar tus reservas.';
       setError(message);
       setReservations([]);
       setCurrentPage(1);
@@ -104,13 +109,15 @@ export function GuestMyReservationsPage() {
       </section>
 
       <section className="room-results">
-        <h2>Mis reservas</h2>
         {loading ? <p className="subtle">Cargando reservas...</p> : null}
-        {!loading && reservations.length === 0 ? (
-          <p className="message success">No se encontraron reservas para el criterio seleccionado.</p>
+        {!loading && !error && reservations.length === 0 ? (
+          <>
+            <h2>Mis reservas</h2>
+            <p className="message success">No se encontraron reservas para el criterio seleccionado.</p>
+          </>
         ) : null}
 
-        {!loading && reservations.length > 0 ? (
+        {!loading && !error && reservations.length > 0 ? (
           <div className="card reservation-grid-wrap">
             <table className="reservation-grid" aria-label="Listado paginado de reservas">
               <thead>
@@ -206,4 +213,12 @@ function translateReservationStatus(status: string): string {
   }
 
   return status;
+}
+
+function normalizeFilterErrorMessage(message: string): string {
+  if (message.includes("fromDate") && message.includes("toDate")) {
+    return 'El campo Desde no puede ser mayor que el campo Hasta';
+  }
+
+  return message;
 }

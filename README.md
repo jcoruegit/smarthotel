@@ -149,28 +149,21 @@ npm test
 
 ## Nuevos puntos a agregar (roadmap recomendado)
 
-1. Completar UI de staff para reservas y pricing rules
-- Hoy existen endpoints listos, pero varias pantallas son base/placeholder.
-
-2. Flujo completo de cancelaciones y reembolsos
+1. Flujo completo de cancelaciones y reembolsos
 - Incluir devoluciones parciales/totales, politicas y trazabilidad de cambios.
 
-3. Integracion real de pagos
+2. Integracion real de pagos
 - Reemplazar simulacion por gateway real (tokenizacion, 3DS, webhooks, conciliacion).
 
-4. Chat con IA generativa (opcional)
+3. Chat con IA generativa (opcional)
 - Integrar proveedor LLM + guardrails + observabilidad.
 - Mantener fallback actual basado en reglas.
 
-5. Observabilidad y operacion
+4. Observabilidad y operacion
 - Logs estructurados, metricas, trazas distribuidas, tableros y alertas.
 
-6. Seguridad avanzada
+5. Seguridad avanzada
 - Refresh tokens, rotacion de claves, rate limiting, auditoria y hardening de CORS/cabeceras.
 
-7. Testing end-to-end
+6. Testing end-to-end
 - Casos E2E para login, reserva, pago y panel staff.
-
-8. CI/CD
-- Pipeline de build, test, calidad, migraciones y despliegue por ambientes.
-

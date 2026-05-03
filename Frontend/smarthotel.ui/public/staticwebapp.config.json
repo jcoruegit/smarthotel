@@ -1,0 +1,16 @@
+{
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": [
+      "/assets/*",
+      "/favicon.svg",
+      "/icons.svg"
+    ]
+  },
+  "responseOverrides": {
+    "403": {
+      "statusCode": 302,
+      "redirect": "/unauthorized"
+    }
+  }
+}

@@ -10,6 +10,9 @@ public static class IdentityDataSeeder
     private static readonly string[] DefaultRoles = ["Guest", "Staff", "Admin"];
     private const string AdminRoleName = "Admin";
     private const string GuestRoleName = "Guest";
+    private const string DefaultGuestEmail = "guest@smarthotel.dev";
+    private const string DefaultGuestPassword = "Guest123!";
+    private const string DefaultGuestFullName = "SmartHotel Guest Demo";
 
     public static async Task SeedIdentityDataAsync(
         this IServiceProvider services,
@@ -62,14 +65,21 @@ public static class IdentityDataSeeder
         IConfiguration configuration,
         ILogger logger)
     {
-        var guestEmail = configuration["IdentitySeed:GuestEmail"];
-        var guestPassword = configuration["IdentitySeed:GuestPassword"];
-        var guestFullName = configuration["IdentitySeed:GuestFullName"] ?? "SmartHotel Guest";
+        var guestEmail = string.IsNullOrWhiteSpace(configuration["IdentitySeed:GuestEmail"])
+            ? DefaultGuestEmail
+            : configuration["IdentitySeed:GuestEmail"]!;
+        var guestPassword = string.IsNullOrWhiteSpace(configuration["IdentitySeed:GuestPassword"])
+            ? DefaultGuestPassword
+            : configuration["IdentitySeed:GuestPassword"]!;
+        var guestFullName = string.IsNullOrWhiteSpace(configuration["IdentitySeed:GuestFullName"])
+            ? DefaultGuestFullName
+            : configuration["IdentitySeed:GuestFullName"]!;
 
-        if (string.IsNullOrWhiteSpace(guestEmail) || string.IsNullOrWhiteSpace(guestPassword))
+        if (string.IsNullOrWhiteSpace(configuration["IdentitySeed:GuestEmail"])
+            || string.IsNullOrWhiteSpace(configuration["IdentitySeed:GuestPassword"]))
         {
-            logger.LogWarning("No se configuro IdentitySeed:GuestEmail o IdentitySeed:GuestPassword. No se creo usuario guest demo.");
-            return;
+            logger.LogWarning(
+                "IdentitySeed:GuestEmail o IdentitySeed:GuestPassword no configurados en ambiente. Se usaran valores por defecto para crear/asegurar el guest demo.");
         }
 
         var guestUser = await EnsureUserAsync(userManager, guestEmail, guestPassword, guestFullName, "guest demo");

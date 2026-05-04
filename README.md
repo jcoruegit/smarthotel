@@ -15,7 +15,7 @@ SmartHotel Platform cubre dos grandes perfiles de uso:
 2. Personal interno (Staff/Admin):
 - Acceso autenticado para operacion interna.
 - Gestion de empleados y roles (Admin).
-- Base API lista para gestion de reservas internas y pricing rules.
+- Base API lista para gestion de pricing rules.
 
 Tambien incluye un chat de atencion que responde consultas sobre:
 - Disponibilidad.
@@ -124,6 +124,10 @@ npm run dev
 UI por defecto:
 - `http://localhost:5173`
 
+## Ambiente Azure
+
+- Frontend (Azure Static Web Apps): `https://salmon-dune-0f075f510.7.azurestaticapps.net`
+
 ## Datos semilla
 
 En entorno `Development`, el backend aplica migraciones y carga datos base:
@@ -131,7 +135,17 @@ En entorno `Development`, el backend aplica migraciones y carga datos base:
 - Tipos de habitacion y habitaciones.
 - Servicios, horarios y politicas del hotel.
 - Reglas de pricing iniciales.
-- Usuario admin segun `IdentitySeed` de `appsettings.json`.
+- Usuarios de acceso (admin y guest) segun `IdentitySeed` de `appsettings.json`.
+
+### Usuarios de acceso
+
+1. Admin
+- Email: `admin@smarthotel.dev`
+- Password: `Admin123!`
+
+2. Guest
+- Email: `guest@smarthotel.dev`
+- Password: `Guest123!`
 
 ## Testing
 

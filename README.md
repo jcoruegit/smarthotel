@@ -147,6 +147,10 @@ En entorno `Development`, el backend aplica migraciones y carga datos base:
 - Email: `guest@smarthotel.dev`
 - Password: `Guest123!`
 
+Observacion:
+- Estos usuarios de acceso (admin y guest) son cuentas semilla y no deben usarse para cambiar datos personales ni clave.
+- Si queres modificar datos de usuario y password, primero registrate para crear un usuario nuevo y usa ese usuario.
+
 ## Testing
 
 ### Backend

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -252,7 +253,8 @@ public sealed class AuthEndpointsTests
             request,
             principal,
             harness.AuthLogger,
-            harness.UserManager);
+            harness.UserManager,
+            harness.Configuration);
 
         if (shouldThrow)
         {
@@ -367,6 +369,7 @@ public sealed class AuthEndpointsTests
             principal,
             harness.DbContext,
             harness.UserManager,
+            harness.Configuration,
             harness.AuthLogger,
             CancellationToken.None);
 
@@ -882,8 +885,14 @@ public sealed class AuthEndpointsTests
             roleManager,
             signInManager,
             identityOptions,
+            BuildTestConfiguration(),
             CreateAuthLogger(),
             new FakeJwtTokenService());
+    }
+
+    private static IConfiguration BuildTestConfiguration()
+    {
+        return new ConfigurationBuilder().Build();
     }
 
     private static object CreateAuthLogger()
@@ -903,6 +912,7 @@ public sealed class AuthEndpointsTests
         RoleManager<IdentityRole> roleManager,
         SignInManager<ApplicationUser> signInManager,
         IOptions<IdentityOptions> identityOptions,
+        IConfiguration configuration,
         object authLogger,
         IJwtTokenService jwtTokenService)
         : IAsyncDisposable
@@ -912,6 +922,7 @@ public sealed class AuthEndpointsTests
         public RoleManager<IdentityRole> RoleManager { get; } = roleManager;
         public SignInManager<ApplicationUser> SignInManager { get; } = signInManager;
         public IOptions<IdentityOptions> IdentityOptions { get; } = identityOptions;
+        public IConfiguration Configuration { get; } = configuration;
         public object AuthLogger { get; } = authLogger;
         public IJwtTokenService JwtTokenService { get; } = jwtTokenService;
 

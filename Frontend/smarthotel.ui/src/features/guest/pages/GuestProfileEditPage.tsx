@@ -4,10 +4,12 @@ import { ApiError } from '../../../shared/api/httpClient';
 import { changePassword, getCurrentGuestProfile, getDocumentTypes, updateCurrentGuestProfile } from '../../auth/api/authApi';
 import { useAuth } from '../../auth/hooks/useAuth';
 import type { DocumentTypeOption } from '../../../shared/types/auth';
+import { isDemoGuestAccount } from '../utils/demoGuestAccess';
 
 export function GuestProfileEditPage() {
   const navigate = useNavigate();
   const { session, updateSessionEmail } = useAuth();
+  const isReadOnlyDemoGuest = isDemoGuestAccount(session?.email);
 
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeOption[]>([]);
   const [documentTypeId, setDocumentTypeId] = useState(1);
@@ -31,6 +33,11 @@ export function GuestProfileEditPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
+    if (isReadOnlyDemoGuest) {
+      navigate('/guest/panel', { replace: true });
+      return;
+    }
+
     const accessToken = session?.accessToken;
     const sessionEmail = session?.email;
 
@@ -90,7 +97,7 @@ export function GuestProfileEditPage() {
     return () => {
       isMounted = false;
     };
-  }, [session?.accessToken, session?.email]);
+  }, [isReadOnlyDemoGuest, navigate, session?.accessToken, session?.email]);
 
   async function handleSaveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

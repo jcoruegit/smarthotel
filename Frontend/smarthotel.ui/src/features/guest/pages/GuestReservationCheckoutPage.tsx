@@ -16,6 +16,7 @@ import {
   reservationSuccessStorageKey,
 } from '../constants/reservationStorage';
 import type { ReservationRoomSelection } from '../types/reservationSelection';
+import { getDemoGuestReservationIdentity, isDemoGuestAccount } from '../utils/demoGuestAccess';
 
 const confirmationReturnTo = '/reservas/confirmar?resumeConfirm=1';
 
@@ -43,6 +44,8 @@ export function GuestReservationCheckoutPage() {
   const location = useLocation();
   const { session, logout } = useAuth();
   const isLoggedIn = Boolean(session);
+  const isReadOnlyDemoGuest = isDemoGuestAccount(session?.email);
+  const demoGuestIdentity = useMemo(() => getDemoGuestReservationIdentity(), []);
   const backButtonLabel = isLoggedIn ? 'Volver a reservas' : 'Volver a Inicio';
 
   const navigationState = (location.state as CheckoutNavigationState | null) ?? null;
@@ -66,9 +69,11 @@ export function GuestReservationCheckoutPage() {
   );
 
   const [documentType, setDocumentType] = useState(storedDraft?.documentType || 'DNI');
-  const [firstName, setFirstName] = useState(storedDraft?.firstName || '');
-  const [lastName, setLastName] = useState(storedDraft?.lastName || '');
-  const [documentNumber, setDocumentNumber] = useState(storedDraft?.documentNumber || '');
+  const [firstName, setFirstName] = useState(storedDraft?.firstName || (isReadOnlyDemoGuest ? demoGuestIdentity.firstName : ''));
+  const [lastName, setLastName] = useState(storedDraft?.lastName || (isReadOnlyDemoGuest ? demoGuestIdentity.lastName : ''));
+  const [documentNumber, setDocumentNumber] = useState(
+    storedDraft?.documentNumber || (isReadOnlyDemoGuest ? demoGuestIdentity.documentNumber : ''),
+  );
   const [birthDate, setBirthDate] = useState(storedDraft?.birthDate || '1995-01-01');
   const [email, setEmail] = useState(storedDraft?.email || session?.email || '');
   const [phone, setPhone] = useState(storedDraft?.phone || '');
@@ -92,6 +97,16 @@ export function GuestReservationCheckoutPage() {
   }, [email, session?.email]);
 
   useEffect(() => {
+    if (!isReadOnlyDemoGuest) {
+      return;
+    }
+
+    setFirstName(demoGuestIdentity.firstName);
+    setLastName(demoGuestIdentity.lastName);
+    setDocumentNumber(demoGuestIdentity.documentNumber);
+  }, [demoGuestIdentity.documentNumber, demoGuestIdentity.firstName, demoGuestIdentity.lastName, isReadOnlyDemoGuest]);
+
+  useEffect(() => {
     if (!session?.accessToken) {
       return;
     }
@@ -108,9 +123,9 @@ export function GuestReservationCheckoutPage() {
         }
 
         setDocumentType(profile.documentTypeName);
-        setFirstName(profile.firstName);
-        setLastName(profile.lastName);
-        setDocumentNumber(profile.documentNumber);
+        setFirstName(isReadOnlyDemoGuest ? demoGuestIdentity.firstName : profile.firstName);
+        setLastName(isReadOnlyDemoGuest ? demoGuestIdentity.lastName : profile.lastName);
+        setDocumentNumber(isReadOnlyDemoGuest ? demoGuestIdentity.documentNumber : profile.documentNumber);
         setBirthDate(profile.birthDate);
         setEmail(profile.email ?? sessionEmail ?? '');
         setPhone(profile.phone ?? '');
@@ -124,7 +139,7 @@ export function GuestReservationCheckoutPage() {
     return () => {
       isMounted = false;
     };
-  }, [session?.accessToken, session?.email]);
+  }, [demoGuestIdentity.documentNumber, demoGuestIdentity.firstName, demoGuestIdentity.lastName, isReadOnlyDemoGuest, session?.accessToken, session?.email]);
 
   useEffect(() => {
     writeCheckoutDraft({

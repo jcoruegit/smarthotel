@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../auth/hooks/useAuth';
 import { checkoutSelectionStorageKey } from '../constants/reservationStorage';
+import { isDemoGuestAccount } from '../utils/demoGuestAccess';
 
 export function GuestControlPanelPage() {
   const navigate = useNavigate();
+  const { session } = useAuth();
   const [showMissingReservationPopup, setShowMissingReservationPopup] = useState(false);
+  const isReadOnlyDemoGuest = isDemoGuestAccount(session?.email);
 
   function handleContinuePayment() {
     if (hasReservationSelection()) {
@@ -45,13 +49,15 @@ export function GuestControlPanelPage() {
           </button>
         </article>
 
-        <article className="card form-card">
-          <h2>Modificar datos</h2>
-          <p>Actualiza tus datos personales y tu clave de acceso.</p>
-          <Link className="btn btn-primary" to="/guest/panel/datos">
-            Ir a modificar datos
-          </Link>
-        </article>
+        {!isReadOnlyDemoGuest ? (
+          <article className="card form-card">
+            <h2>Modificar datos</h2>
+            <p>Actualiza tus datos personales y tu clave de acceso.</p>
+            <Link className="btn btn-primary" to="/guest/panel/datos">
+              Ir a modificar datos
+            </Link>
+          </article>
+        ) : null}
 
         <article className="card form-card">
           <h2>Ver reservas</h2>

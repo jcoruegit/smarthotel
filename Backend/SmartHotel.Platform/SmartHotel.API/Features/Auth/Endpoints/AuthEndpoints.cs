@@ -21,6 +21,7 @@ public static class AuthEndpoints
     private static readonly HashSet<string> AllowedManagedRoles = ["Guest", "Staff", "Admin"];
     private const string EmployeeEmailDomain = "smarthotel.dev";
     private const string DefaultEmployeeTemporaryPassword = "Temp#Hotel2026";
+    private const string GuestDemoEmailConfigKey = "IdentitySeed:GuestEmail";
 
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -384,6 +385,7 @@ public static class AuthEndpoints
         ClaimsPrincipal principal,
         AppDbContext dbContext,
         UserManager<ApplicationUser> userManager,
+        IConfiguration configuration,
         ILogger<AuthEndpointsLogContext> logger,
         CancellationToken cancellationToken)
     {
@@ -425,6 +427,13 @@ public static class AuthEndpoints
         if (user is null)
         {
             throw new UserFriendlyException("Usuario no encontrado.", StatusCodes.Status401Unauthorized);
+        }
+
+        if (IsConfiguredGuestDemoUser(user, configuration))
+        {
+            throw new UserFriendlyException(
+                "La cuenta Guest demo no permite modificar datos personales.",
+                StatusCodes.Status403Forbidden);
         }
 
         var documentType = await dbContext.DocumentTypes
@@ -722,7 +731,8 @@ public static class AuthEndpoints
         [FromBody] ChangePasswordRequestDto? request,
         ClaimsPrincipal principal,
         ILogger<AuthEndpointsLogContext> logger,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        IConfiguration configuration)
     {
         if (request is null)
         {
@@ -742,6 +752,13 @@ public static class AuthEndpoints
         if (user is null)
         {
             throw new UserFriendlyException("Usuario no encontrado.", StatusCodes.Status401Unauthorized);
+        }
+
+        if (IsConfiguredGuestDemoUser(user, configuration))
+        {
+            throw new UserFriendlyException(
+                "La cuenta Guest demo no permite cambiar la clave.",
+                StatusCodes.Status403Forbidden);
         }
 
         var changePasswordResult = await userManager.ChangePasswordAsync(user, currentPassword, newPassword);
@@ -1593,6 +1610,17 @@ public static class AuthEndpoints
             throw new UserFriendlyException("El campo 'email' debe tener un formato valido.");
         }
 
+    }
+
+    private static bool IsConfiguredGuestDemoUser(ApplicationUser user, IConfiguration configuration)
+    {
+        var configuredGuestEmail = configuration[GuestDemoEmailConfigKey];
+        if (string.IsNullOrWhiteSpace(configuredGuestEmail) || string.IsNullOrWhiteSpace(user.Email))
+        {
+            return false;
+        }
+
+        return string.Equals(user.Email, configuredGuestEmail, StringComparison.OrdinalIgnoreCase);
     }
 }
 
